@@ -21,6 +21,18 @@ public sealed class NewAchievementEventArgs : EventArgs
 }
 
 /// <summary>
+/// Event data for progress increase on a stat-based (progress) achievement that is not yet earned.
+/// </summary>
+public sealed class AchievementProgressEventArgs : EventArgs
+{
+    public required string AppId { get; init; }
+    public required string AchievementName { get; init; }
+    public required long Progress { get; init; }
+    public required long MaxProgress { get; init; }
+    public AchievementUnlockState? UnlockState { get; init; }
+}
+
+/// <summary>
 /// Event data for a per-game folder observed under a GSE Saves path (e.g. GSE Saves/1601580/),
 /// signalling that an emulator ran for that appid.
 /// </summary>
@@ -38,8 +50,8 @@ public sealed class GameFolderObservedEventArgs : EventArgs
 
 /// <summary>
 /// Watches the GSE Saves directory for achievements.json changes.
-/// Detects new achievement unlocks by diffing against cached state
-/// and raises NewAchievement events.
+/// Detects new achievement unlocks and progress increases by diffing against cached state
+/// and raises NewAchievement / AchievementProgress events.
 /// </summary>
 public sealed class AchievementWatcher : IDisposable
 {
@@ -48,6 +60,9 @@ public sealed class AchievementWatcher : IDisposable
 
     // Tracks last-seen earned_time per (appid, achievementName) to avoid duplicate notifications
     private readonly ConcurrentDictionary<string, long> _seenAchievements = new();
+
+    // Tracks last-seen progress per (appid, achievementName) for progressive achievements
+    private readonly ConcurrentDictionary<string, long> _seenProgress = new();
 
     // Tracks last (write-time, length) per file to skip unchanged files
     private readonly ConcurrentDictionary<string, (DateTime Time, long Length)> _lastModTimes = new();
@@ -71,6 +86,11 @@ public sealed class AchievementWatcher : IDisposable
     private readonly TimeSpan _retryDelay;
 
     public event EventHandler<NewAchievementEventArgs>? NewAchievement;
+
+    /// <summary>
+    /// Raised when progress on an unearned progressive achievement increases.
+    /// </summary>
+    public event EventHandler<AchievementProgressEventArgs>? AchievementProgress;
 
     /// <summary>
     /// Raised the first time each appid is observed under a GSE Saves path — either as a newly
@@ -201,7 +221,7 @@ public sealed class AchievementWatcher : IDisposable
 
         Logger.Info($"New GSE Saves folder detected: appid={appId}");
 
-        // Deliberately not guarded by _observedAppIds: a folder is created once, and at this point
+        // Deliberately not guarded by _observedAppIds: a folder is created once, and at that point
         // there is usually no achievements.json yet, so the handler cannot judge the game. Burning
         // the guard here would suppress the file-based raise that finally carries the data.
         GameFolderObserved?.Invoke(this, new GameFolderObservedEventArgs { AppId = appId, States = null });
@@ -259,7 +279,7 @@ public sealed class AchievementWatcher : IDisposable
     }
 
     /// <summary>
-    /// Processes an achievements.json file, detecting new unlocks.
+    /// Processes an achievements.json file, detecting new unlocks and progress increases.
     /// </summary>
     internal async Task ProcessFileAsync(string filePath)
     {
@@ -300,47 +320,84 @@ public sealed class AchievementWatcher : IDisposable
         if (_observedAppIds.TryAdd(appId, 0))
             GameFolderObserved?.Invoke(this, new GameFolderObservedEventArgs { AppId = appId, States = states });
 
-        // A folder that appeared after Start() was never seeded. Its pre-existing unlocks must be
-        // recorded, not replayed — otherwise moving save files in mid-session (or a cloud sync
-        // dropping a folder) fires one popup per achievement, seconds apart.
+        // A folder that appeared after Start() was never seeded. Its pre-existing unlocks and
+        // progress must be recorded, not replayed — otherwise moving save files in mid-session
+        // (or a cloud sync dropping a folder) fires one popup per achievement, seconds apart.
         if (_seededAppIds.TryAdd(appId, 0))
         {
-            var backlog = states
-                .Where(s => s.Value.Earned && s.Value.EarnedTime < _startedAtUnix)
-                .ToDictionary(s => s.Key, s => s.Value);
-
-            if (backlog.Count > 0)
-            {
-                SeedExistingAchievements(appId, backlog);
-                Logger.Info($"Seeded {backlog.Count} pre-existing achievement(s) for newly seen appid {appId}");
-            }
+            // Seed everything we currently see (earned + progress), not only old earned times.
+            SeedExistingAchievements(appId, states);
+            var earnedCount = states.Count(s => s.Value.Earned);
+            var progressCount = states.Count(s => s.Value.HasProgress);
+            Logger.Info($"Seeded newly seen appid {appId}: {earnedCount} earned, {progressCount} with progress");
         }
 
-        // Diff against cached state to find new unlocks
+        // Diff against cached state to find new unlocks and progress increases
         foreach (var (achName, state) in states)
         {
-            if (!state.Earned)
-                continue;
-
             var key = $"{appId}|{achName}";
-            var earnedTime = state.EarnedTime;
 
-            // Atomically add or check: if key already present with same time, skip.
-            // TryAdd returns false if key exists; then verify the existing value matches.
-            if (!_seenAchievements.TryAdd(key, earnedTime))
+            // --- unlock ---
+            if (state.Earned)
             {
-                if (_seenAchievements.TryGetValue(key, out var prev) && prev == earnedTime)
-                    continue;
-                _seenAchievements[key] = earnedTime;
+                var earnedTime = state.EarnedTime;
+
+                // Atomically add or check: if key already present with same time, skip.
+                if (!_seenAchievements.TryAdd(key, earnedTime))
+                {
+                    if (_seenAchievements.TryGetValue(key, out var prev) && prev == earnedTime)
+                    {
+                        // Already known unlock; still keep progress cache in sync
+                        if (state.HasProgress)
+                            _seenProgress[key] = state.Progress;
+                        continue;
+                    }
+                    _seenAchievements[key] = earnedTime;
+                }
+
+                // Keep progress cache aligned so we never fire progress after unlock
+                if (state.HasProgress)
+                    _seenProgress[key] = state.Progress;
+
+                Logger.Info($"New achievement unlocked: appid={appId}, name={achName}, time={state.EarnedTime}");
+
+                NewAchievement?.Invoke(this, new NewAchievementEventArgs
+                {
+                    AppId = appId,
+                    AchievementName = achName,
+                    EarnedTime = state.EarnedTime,
+                    UnlockState = state
+                });
+                continue;
             }
 
-            Logger.Info($"New achievement unlocked: appid={appId}, name={achName}, time={state.EarnedTime}");
+            // --- progress (only unearned + has max_progress) ---
+            if (!state.HasProgress)
+                continue;
 
-            NewAchievement?.Invoke(this, new NewAchievementEventArgs
+            var progress = state.Progress;
+
+            // First time we see this key → seed only (no notification)
+            if (_seenProgress.TryAdd(key, progress))
+                continue;
+
+            if (!_seenProgress.TryGetValue(key, out var prevProgress))
+                continue;
+
+            // Notify only when progress increased
+            if (progress <= prevProgress)
+                continue;
+
+            _seenProgress[key] = progress;
+
+            Logger.Info($"Achievement progress: appid={appId}, name={achName}, {progress}/{state.MaxProgress}");
+
+            AchievementProgress?.Invoke(this, new AchievementProgressEventArgs
             {
                 AppId = appId,
                 AchievementName = achName,
-                EarnedTime = state.EarnedTime,
+                Progress = progress,
+                MaxProgress = state.MaxProgress,
                 UnlockState = state
             });
         }
@@ -436,7 +493,9 @@ public sealed class AchievementWatcher : IDisposable
                 var json = File.ReadAllText(achievementsFile);
                 var states = AchievementMetadata.ParseUnlockStates(json);
                 SeedExistingAchievements(appId, states);
-                Logger.Info($"Seeded {states.Count(s => s.Value.Earned)} existing achievement(s) for appid {appId}");
+                var earned = states.Count(s => s.Value.Earned);
+                var withProgress = states.Count(s => s.Value.HasProgress);
+                Logger.Info($"Seeded appid {appId}: {earned} earned, {withProgress} with progress");
             }
             catch (Exception ex)
             {
@@ -446,20 +505,22 @@ public sealed class AchievementWatcher : IDisposable
     }
 
     /// <summary>
-    /// Seeds the cache with already-earned achievements so they don't fire as new.
-    /// Call this after initial scan to avoid replaying old unlocks.
-    /// Records only achievements not already observed — a re-seed running concurrently with a
-    /// live unlock must not overwrite (and thereby swallow) what the watcher has just seen.
+    /// Seeds the cache with already-earned achievements and current progress so they don't fire
+    /// as new. Call this after initial scan to avoid replaying old unlocks/progress.
+    /// Records only keys not already observed — a re-seed running concurrently with a live unlock
+    /// must not overwrite (and thereby swallow) what the watcher has just seen.
     /// </summary>
     public void SeedExistingAchievements(string appId, Dictionary<string, AchievementUnlockState> states)
     {
         foreach (var (achName, state) in states)
         {
+            var key = $"{appId}|{achName}";
+
             if (state.Earned)
-            {
-                var key = $"{appId}|{achName}";
                 _seenAchievements.TryAdd(key, state.EarnedTime);
-            }
+
+            if (state.HasProgress)
+                _seenProgress.TryAdd(key, state.Progress);
         }
     }
 }
