@@ -22,13 +22,23 @@ public sealed class AchievementUnlockState
     [JsonConverter(typeof(FlexibleInt64Converter))]
     public long EarnedTime { get; set; }
 
-    /// <summary>Present only in self-describing files (Uplay); null for GBE's.</summary>
+    // NEW — GBE пишет как числа; converter на случай строк
+    [JsonPropertyName("progress")]
+    [JsonConverter(typeof(FlexibleInt64Converter))]
+    public long Progress { get; set; }
+
+    [JsonPropertyName("max_progress")]
+    [JsonConverter(typeof(FlexibleInt64Converter))]
+    public long MaxProgress { get; set; }
+
     [JsonPropertyName("displayName")]
     public JsonElement? DisplayName { get; set; }
 
-    /// <summary>Present only in self-describing files (Uplay); null for GBE's.</summary>
     [JsonPropertyName("description")]
     public JsonElement? Description { get; set; }
+
+    /// <summary>Есть шкала прогресса (собирательная ачивка).</summary>
+    public bool HasProgress => MaxProgress > 0;
 }
 
 /// <summary>
