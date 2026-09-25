@@ -13,6 +13,15 @@ public sealed class NotificationItem
     public required string Description { get; init; }
     public string? IconPath { get; init; }
     public required string AppId { get; init; }
+
+    /// <summary>
+    /// When set, this is a progress update rather than an unlock: the popup shows
+    /// <c>Progress / MaxProgress</c> and a progress bar under the description.
+    /// </summary>
+    public long? Progress { get; init; }
+    public long? MaxProgress { get; init; }
+
+    public bool IsProgress => Progress.HasValue && MaxProgress is > 0;
 }
 
 /// <summary>
@@ -101,6 +110,37 @@ public sealed class NotificationQueue : IDisposable
         });
     }
 
+    /// <summary>
+    /// Enqueues a progress update for an unearned stat-based achievement. No-ops when the
+    /// setting is off or metadata cannot be resolved.
+    /// </summary>
+    public void EnqueueProgress(AchievementProgressEventArgs args)
+    {
+        if (_disposed)
+            return;
+
+        if (!_config.ShowProgressNotifications)
+            return;
+
+        var resolved = AchievementMetadata.Resolve(
+            _gameCache, args.AppId, args.AchievementName, args.UnlockState, _config.Language);
+        if (resolved == null)
+        {
+            Logger.Warn($"Skipping progress notification for {args.AppId}/{args.AchievementName} — no metadata");
+            return;
+        }
+
+        EnqueueItem(new NotificationItem
+        {
+            AppId = args.AppId,
+            AchievementName = resolved.DisplayName,
+            Description = resolved.Description,
+            IconPath = resolved.IconPath,
+            Progress = args.Progress,
+            MaxProgress = args.MaxProgress
+        });
+    }
+
     private void EnqueueItem(NotificationItem item)
     {
         _queue.Enqueue(item);
@@ -164,12 +204,20 @@ public sealed class NotificationQueue : IDisposable
             Logger.Info($"Showing notification: {item.AchievementName} at ({gameWindowRect.Left},{gameWindowRect.Top} {gameWindowRect.Width}x{gameWindowRect.Height})");
 
             var appearance = ResolveAppearance(item.AppId);
-            _soundPlayer?.Play(appearance.SoundEnabled, appearance.SoundPath, appearance.SoundIsFromGame);
+            // Progress updates are quieter: no unlock sound (they can fire often on grind achievements).
+            if (!item.IsProgress)
+                _soundPlayer?.Play(appearance.SoundEnabled, appearance.SoundPath, appearance.SoundIsFromGame);
 
             var window = new NotificationWindow(appearance);
             window.Closed += (_, _) => ScheduleRetry(_gapTimer ??= CreateTimer(), GapBetweenNotifications);
 
-            window.ShowNotification(item.AchievementName, item.Description, item.IconPath, gameWindowRect);
+            window.ShowNotification(
+                item.AchievementName,
+                item.Description,
+                item.IconPath,
+                gameWindowRect,
+                item.Progress,
+                item.MaxProgress);
         }
         catch (Exception ex)
         {

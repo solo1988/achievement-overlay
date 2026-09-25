@@ -347,6 +347,18 @@
                                 </StackPanel>
                             </Border>
 
+                            <Border Style="{StaticResource Card}">
+                                <DockPanel>
+                                    <ToggleButton x:Name="ShowProgressToggle" DockPanel.Dock="Right"
+                                                  Style="{StaticResource ToggleSwitch}" Margin="18,0,0,0" />
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource CardTitle}" Text="Show progress updates" />
+                                        <TextBlock Style="{StaticResource CardDescription}"
+                                                   Text="When a progressive achievement gains progress (before it unlocks), show a popup with the current value and a progress bar. Unlock popups are always shown." />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+
                             <TextBlock Style="{StaticResource SectionHeading}" Text="Each game's own settings" Margin="0,22,0,8" />
 
                             <Border Style="{StaticResource Card}">

@@ -105,6 +105,9 @@ public partial class NotificationWindow : Window
         AchievementName.Foreground = Frozen(_palette.Title);
         AchievementDescription.Foreground = Frozen(_palette.Description);
         GameInfoText.Foreground = Frozen(_palette.GameLine);
+        ProgressText.Foreground = Frozen(_palette.Description);
+        ProgressTrack.Background = Frozen(_palette.ProgressTrack);
+        ProgressFill.Background = Frozen(_palette.ProgressFill);
     }
 
     private static SolidColorBrush Frozen(Color colour)
@@ -121,17 +124,46 @@ public partial class NotificationWindow : Window
     /// <param name="description">Achievement description text.</param>
     /// <param name="iconPath">Path to the achievement icon file, or null for default.</param>
     /// <param name="gameWindowRect">Rectangle of the game window (left, top, width, height).</param>
-    public void ShowNotification(string achievementName, string description, string? iconPath, Rect gameWindowRect)
+    /// <param name="progress">Current progress value for a progressive achievement, or null.</param>
+    /// <param name="maxProgress">Maximum progress value; when both are set the progress row is shown.</param>
+    public void ShowNotification(
+        string achievementName,
+        string description,
+        string? iconPath,
+        Rect gameWindowRect,
+        long? progress = null,
+        long? maxProgress = null)
     {
         AchievementName.Text = achievementName;
         AchievementDescription.Text = description;
         AchievementDescription.Visibility = string.IsNullOrEmpty(description) ? Visibility.Collapsed : Visibility.Visible;
+        ApplyProgress(progress, maxProgress);
 
         var scale = ApplyScale(gameWindowRect);
         LoadIcon(iconPath, scale);
         SizeAndPosition(gameWindowRect, scale);
         Show();
         StartSlideIn();
+    }
+
+    /// <summary>
+    /// Shows or hides the progress text + bar. The bar width is set in design units (230 max)
+    /// so the root scale transform keeps it proportional with the rest of the popup.
+    /// </summary>
+    private void ApplyProgress(long? progress, long? maxProgress)
+    {
+        if (progress == null || maxProgress is not > 0)
+        {
+            ProgressPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var current = Math.Clamp(progress.Value, 0, maxProgress.Value);
+        ProgressText.Text = $"{current} / {maxProgress.Value}";
+        // Design width of the text column (matches AchievementDescription Width).
+        const double trackWidth = 230;
+        ProgressFill.Width = trackWidth * ((double)current / maxProgress.Value);
+        ProgressPanel.Visibility = Visibility.Visible;
     }
 
     /// <summary>
@@ -174,6 +206,7 @@ public partial class NotificationWindow : Window
         AchievementName.MaxWidth = BaseOuterWidth;
         AchievementName.Width = BaseOuterWidth - 24; // minus RootBorder padding (12 each side)
         AchievementDescription.Visibility = Visibility.Collapsed;
+        ProgressPanel.Visibility = Visibility.Collapsed;
 
         var scale = ApplyScale(gameWindowRect);
         PlaceForStack(gameWindowRect, scale, customTop, slideOffset);
@@ -209,6 +242,7 @@ public partial class NotificationWindow : Window
         AchievementName.Text = achievementName;
         AchievementDescription.Text = description;
         AchievementDescription.Visibility = string.IsNullOrEmpty(description) ? Visibility.Collapsed : Visibility.Visible;
+        ProgressPanel.Visibility = Visibility.Collapsed;
 
         if (!string.IsNullOrEmpty(gameInfoLine))
         {

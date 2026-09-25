@@ -190,6 +190,7 @@ public partial class SettingsWindow : Window
         CustomSoundRadio.IsChecked = !string.IsNullOrWhiteSpace(_current.SoundPath);
         BuiltInSoundRadio.IsChecked = !CustomSoundRadio.IsChecked;
         SoundPathBox.Text = _current.SoundPath;
+        ShowProgressToggle.IsChecked = _current.ShowProgressNotifications;
         GameOverlaySettingsToggle.IsChecked = _current.UseGameOverlaySettings;
 
         SteamKeyMasked.Password = _current.SteamWebApiKey ?? "";
@@ -214,6 +215,7 @@ public partial class SettingsWindow : Window
         // plainly which of the two is in use.
         SoundPath = CustomSoundRadio.IsChecked == true ? SoundPathBox.Text.Trim() : "",
         DisplayDuration = (int)DurationSlider.Value,
+        ShowProgressNotifications = ShowProgressToggle.IsChecked == true,
         UseGameOverlaySettings = GameOverlaySettingsToggle.IsChecked == true,
         RecentAchievementsShortcut = ShortcutBox.Text.Trim(),
         RecentAchievementsCount = ParseCount(),

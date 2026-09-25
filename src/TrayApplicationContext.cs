@@ -66,7 +66,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             ShowConfigError(heading, detail);
             return;
         }
-        Logger.Info($"Config: gamesPaths='{string.Join(";", _config.GamesPaths)}', gseSavesPaths='{string.Join(";", _config.GseSavesPaths)}', language={_config.Language}, soundEnabled={_config.SoundEnabled}, soundPath='{_config.SoundPath}', displayDuration={_config.DisplayDuration}, useGameOverlaySettings={_config.UseGameOverlaySettings}, recentAchievementsShortcut={_config.RecentAchievementsShortcut}, recentAchievementsCount={_config.RecentAchievementsCount}");
+        Logger.Info($"Config: gamesPaths='{string.Join(";", _config.GamesPaths)}', gseSavesPaths='{string.Join(";", _config.GseSavesPaths)}', language={_config.Language}, soundEnabled={_config.SoundEnabled}, soundPath='{_config.SoundPath}', displayDuration={_config.DisplayDuration}, useGameOverlaySettings={_config.UseGameOverlaySettings}, showProgressNotifications={_config.ShowProgressNotifications}, recentAchievementsShortcut={_config.RecentAchievementsShortcut}, recentAchievementsCount={_config.RecentAchievementsCount}");
 
         _gameCache = new GameCache(_config);
         _gameCache.ScanAll();
@@ -199,6 +199,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         var watcher = new AchievementWatcher(gseSavesPaths);
         watcher.NewAchievement += OnNewAchievement;
+        watcher.AchievementProgress += OnAchievementProgress;
         watcher.GameFolderObserved += OnGameFolderObserved;
         watcher.Start();
         return watcher;
@@ -207,6 +208,11 @@ public sealed class TrayApplicationContext : ApplicationContext
     private void OnNewAchievement(object? sender, NewAchievementEventArgs e)
     {
         _notificationQueue.Enqueue(e);
+    }
+
+    private void OnAchievementProgress(object? sender, AchievementProgressEventArgs e)
+    {
+        _notificationQueue.EnqueueProgress(e);
     }
 
     private void OnGameFolderObserved(object? sender, GameFolderObservedEventArgs e)
@@ -514,6 +520,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
 
         _watcher.NewAchievement -= OnNewAchievement;
+        _watcher.AchievementProgress -= OnAchievementProgress;
         _watcher.GameFolderObserved -= OnGameFolderObserved;
         _watcher.Dispose();
         _watcher = CreateWatcher(validSavesPaths);

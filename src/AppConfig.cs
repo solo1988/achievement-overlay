@@ -46,6 +46,7 @@ public sealed class AppConfig
     public string SoundPath { get { Reload(); return _settings.SoundPath; } }
     public int DisplayDuration { get { Reload(); return _settings.DisplayDuration; } }
     public bool UseGameOverlaySettings { get { Reload(); return _settings.UseGameOverlaySettings; } }
+    public bool ShowProgressNotifications { get { Reload(); return _settings.ShowProgressNotifications; } }
     public string RecentAchievementsShortcut { get { Reload(); return _settings.RecentAchievementsShortcut; } }
     public int RecentAchievementsCount { get { Reload(); return _settings.RecentAchievementsCount; } }
     public string? SteamWebApiKey { get { Reload(); return _settings.SteamWebApiKey; } }
@@ -428,6 +429,14 @@ public sealed class SettingsData
     /// </summary>
     [JsonPropertyName("useGameOverlaySettings")]
     public bool UseGameOverlaySettings { get; set; }
+
+    /// <summary>
+    /// Whether to show a popup when progress on an unearned stat-based achievement increases.
+    /// Absent reads as off, so an existing install keeps unlock-only behaviour until the user opts in;
+    /// a fresh config ships with it on.
+    /// </summary>
+    [JsonPropertyName("showProgressNotifications")]
+    public bool ShowProgressNotifications { get; set; }
 
     [JsonPropertyName("recentAchievementsShortcut")]
     public string RecentAchievementsShortcut { get; set; } = "";

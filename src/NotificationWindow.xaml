@@ -57,6 +57,24 @@
                                Width="230"
                                TextWrapping="Wrap"
                                Margin="0,2,0,0" />
+                    <!-- Progress row: hidden unless ShowNotification is given progress values. -->
+                    <StackPanel x:Name="ProgressPanel"
+                                Width="230"
+                                Margin="0,6,0,0"
+                                Visibility="Collapsed">
+                        <TextBlock x:Name="ProgressText"
+                                   FontSize="11"
+                                   Margin="0,0,0,4" />
+                        <Border x:Name="ProgressTrack"
+                                Height="4"
+                                CornerRadius="2">
+                            <Border x:Name="ProgressFill"
+                                    Height="4"
+                                    CornerRadius="2"
+                                    HorizontalAlignment="Left"
+                                    Width="0" />
+                        </Border>
+                    </StackPanel>
                 </StackPanel>
             </DockPanel>
         </Grid>

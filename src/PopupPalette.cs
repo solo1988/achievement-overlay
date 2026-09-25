@@ -56,6 +56,12 @@ public sealed record PopupPalette
     /// </summary>
     public required Color IconRing { get; init; }
 
+    /// <summary>Track behind the progress bar (muted ink).</summary>
+    public required Color ProgressTrack { get; init; }
+
+    /// <summary>Filled portion of the progress bar — Steam-like blue on dark fills, darker blue on light.</summary>
+    public required Color ProgressFill { get; init; }
+
     /// <summary>
     /// Derives the text colours for a background. On the shipped <c>#DD1A1A2E</c> every level clears
     /// its floor untouched, so this returns exactly the four colours the popup has always drawn — the
@@ -69,6 +75,12 @@ public sealed record PopupPalette
         // #444444 gives 4.95:1.
         var muted = ink == Colors.White ? Color.FromRgb(0xAA, 0xAA, 0xAA) : Color.FromRgb(0x44, 0x44, 0x44);
 
+        // Progress bar: Steam-ish blue fill; track is muted ink at low alpha so it reads as a groove.
+        var progressFill = ink == Colors.White
+            ? Color.FromRgb(0x66, 0xC0, 0xF4)   // light blue on dark
+            : Color.FromRgb(0x1A, 0x9F, 0xDB);  // stronger blue on light
+        var progressTrack = Color.FromArgb(0x55, muted.R, muted.G, muted.B);
+
         return new PopupPalette
         {
             Background = background,
@@ -77,7 +89,9 @@ public sealed record PopupPalette
             Description = Level(background, ink, muted, 0xCC, BodyFloor),
             GameLine = Level(background, ink, muted, 0x99, GameLineFloor),
             Footer = Level(background, ink, ink, 0xBB, BodyFloor),
-            IconRing = Contrast(IconGold, background) >= NonTextFloor ? IconGold : Color.FromArgb(0xFF, ink.R, ink.G, ink.B)
+            IconRing = Contrast(IconGold, background) >= NonTextFloor ? IconGold : Color.FromArgb(0xFF, ink.R, ink.G, ink.B),
+            ProgressTrack = progressTrack,
+            ProgressFill = progressFill
         };
     }
 
